@@ -92,6 +92,10 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Nunito',sans-serif
 .btn-share:active{transform:translate(2px,3px);box-shadow:1px 1px 0 var(--outline);}
 .btn-wpp{background:#25D366;}.btn-ig{background:linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);}.btn-tt{background:#010101;}.btn-close-share{background:#888;}
 .share-icon{font-size:20px;}
+
+#muteBtn{background:var(--yellow);border:2.5px solid var(--outline);border-radius:8px;font-size:16px;width:34px;height:34px;cursor:pointer;box-shadow:2px 2px 0 var(--outline);transition:transform .1s,box-shadow .1s;display:flex;align-items:center;justify-content:center;padding:0;}
+#muteBtn:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--outline);}
+#muteBtn:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--outline);}
 </style>
 </head>
 <body>
@@ -119,7 +123,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Nunito',sans-serif
 
 <!-- GAME -->
 <div class="screen hidden" id="gameScreen">
-  <div id="topBar">
+  <div id="topBar"><button id="muteBtn" title="Mudo/Som">🔊</button>
     <div id="scoreDisplay">0</div>
     <div style="display:flex;gap:8px;align-items:center">
       <div id="bestDisplay">🏆 Melhor: 0</div>
@@ -228,7 +232,7 @@ loginBtn.addEventListener('click',()=>{
   if(!rafId) rafId=requestAnimationFrame(loop);
 });
 logoutBtn.addEventListener('click',()=>{
-  cancelAnimationFrame(rafId);rafId=null;
+  cancelAnimationFrame(rafId);rafId=null;stopBgMusic();
   nameModal.classList.add('hidden');
   showScreen(loginScreen);
 });
@@ -248,7 +252,7 @@ let state='idle',bird,pipes,score,lastPipe;
 function initBird(){return{x:88,y:H/2-20,vy:0,w:62,h:52};}
 function reset(){bird=initBird();pipes=[];score=0;lastPipe=0;scoreEl.textContent='0';}
 function spawnPipe(){const topH=Math.floor(Math.random()*(GROUND-GAP-120))+60;pipes.push({x:W+10,topH,scored:false});}
-function jump(){if(state==='dead')return;if(state==='idle'){state='playing';lastPipe=performance.now();}bird.vy=JUMP;}
+function jump(){if(state==='dead')return;if(state==='idle'){state='playing';lastPipe=performance.now();startBgMusic();}bird.vy=JUMP;sfxJump();}
 
 function drawBg(){
   const sky=ctx.createLinearGradient(0,0,0,GROUND);
@@ -350,8 +354,8 @@ function loop(now){
     if(now-lastPipe>PIPE_INTERVAL){spawnPipe();lastPipe=now;}
     pipes.forEach(p=>{p.x-=PIPE_SPEED;});
     pipes=pipes.filter(p=>p.x+PIPE_W>-20);
-    pipes.forEach(p=>{if(!p.scored&&p.x+PIPE_W<bird.x){p.scored=true;score++;if(score>best)best=score;scoreEl.textContent=score;bestEl.textContent='🏆 Melhor: '+best;}});
-    if(checkCollision()){state='dead';lastScore=score;openNameModal(score);}
+    pipes.forEach(p=>{if(!p.scored&&p.x+PIPE_W<bird.x){p.scored=true;score++;if(score>best)best=score;scoreEl.textContent=score;bestEl.textContent='🏆 Melhor: '+best;sfxPoint();}});
+    if(checkCollision()){state='dead';lastScore=score;sfxGameOver();openNameModal(score);}
   }
   drawPipes();drawBird();
   if(state==='idle'||state==='dead') drawOverlay();
@@ -374,6 +378,255 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Space'){e.preventDefault();jump();}
   if(e.code==='KeyR'&&state==='dead'){reset();state='idle';}
 });
+
+
+// ══════════════════════════════
+// AUDIO ENGINE (Web Audio API)
+// ══════════════════════════════
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+let bgNodes = [];
+let audioEnabled = true;
+let bgStarted = false;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// ── MUTE BUTTON ──
+const muteBtn = document.getElementById('muteBtn');
+muteBtn.addEventListener('click', () => {
+  audioEnabled = !audioEnabled;
+  muteBtn.textContent = audioEnabled ? '🔊' : '🔇';
+  if (!audioEnabled) stopBgMusic();
+  else if (state === 'playing') startBgMusic();
+});
+
+// ── SFX HELPERS ──
+function playTone(freq, type, duration, vol=0.3, when=0) {
+  if (!audioEnabled) return;
+  const ctx = getAudioCtx();
+  const t = ctx.currentTime + when;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  osc.start(t); osc.stop(t + duration);
+}
+
+function playNoise(duration, vol=0.15, freq=800) {
+  if (!audioEnabled) return;
+  const ctx = getAudioCtx();
+  const buf = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1);
+  const src = ctx.createBufferSource();
+  const filt = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  src.buffer = buf;
+  filt.type = 'bandpass'; filt.frequency.value = freq;
+  src.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+  gain.gain.setValueAtTime(vol, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+  src.start(); src.stop(ctx.currentTime + duration);
+}
+
+// ── JUMP SFX ── (cartoon "boing" - swoosh up)
+function sfxJump() {
+  if (!audioEnabled) return;
+  const ctx = getAudioCtx();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(300, t);
+  osc.frequency.exponentialRampToValueAtTime(720, t + 0.12);
+  gain.gain.setValueAtTime(0.35, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  osc.start(t); osc.stop(t + 0.2);
+  // little snap
+  playNoise(0.04, 0.08, 1200);
+}
+
+// ── POINT SFX ── (cheerful ding-ding)
+function sfxPoint() {
+  if (!audioEnabled) return;
+  [0, 0.07, 0.14].forEach((w, i) => {
+    const freqs = [880, 1100, 1320];
+    playTone(freqs[i], 'triangle', 0.18, 0.22, w);
+  });
+}
+
+// ── GAME OVER SFX ── (dramatic descending + noise crash)
+function sfxGameOver() {
+  if (!audioEnabled) return;
+  const ctx = getAudioCtx();
+  stopBgMusic();
+  // descending wail
+  [[600,0],[480,0.12],[360,0.24],[240,0.38],[150,0.54]].forEach(([f,w])=>{
+    playTone(f,'sawtooth',0.18,0.28,w);
+  });
+  // crash noise
+  setTimeout(()=>playNoise(0.6,0.4,200), 650);
+  // low thud
+  setTimeout(()=>{
+    playTone(80,'sine',0.5,0.5);
+    playTone(60,'sine',0.6,0.4);
+  }, 600);
+}
+
+// ══════════════════════════════
+// BACKGROUND MUSIC
+// Gentle infantile glockenspiel loop
+// ══════════════════════════════
+let bgGain = null;
+
+function stopBgMusic() {
+  bgNodes.forEach(n => { try { n.stop(); } catch(e){} });
+  bgNodes = [];
+  bgStarted = false;
+}
+
+function startBgMusic() {
+  if (!audioEnabled || bgStarted) return;
+  bgStarted = true;
+  const ctx = getAudioCtx();
+
+  bgGain = ctx.createGain();
+  bgGain.gain.value = 0.09; // bem baixinho
+  bgGain.connect(ctx.destination);
+
+  const bpm  = 112;           // tempo calmo
+  const beat = 60 / bpm;
+
+  // Glockenspiel: notas suaves C5 pentatônica + oitava abaixo
+  // padrão simples: melodia de 8 compassos, muito espaçada
+  const melody = [
+    // compasso 1 - frase de abertura
+    [523,1],[659,1],[784,1],[0,1],
+    // compasso 2
+    [880,1.5],[784,0.5],[659,1],
+    // compasso 3 - descanso
+    [523,1],[0,1],[523,0.5],[659,0.5],[523,1],
+    // compasso 4
+    [784,1],[659,1],[523,2],
+    // compasso 5 - subida suave
+    [659,1],[784,1],[880,1],[0,1],
+    // compasso 6
+    [1047,1.5],[880,0.5],[784,1],
+    // compasso 7 - descida gentil
+    [659,1],[523,1],[440,1],[0,1],
+    // compasso 8 - resolve
+    [523,1],[659,0.5],[523,0.5],[392,1],[523,1],
+  ];
+
+  // Baixo harmonioso bem suave: só raiz do acorde a cada 2 tempos
+  const bass = [
+    [131,2],[165,2],
+    [131,2],[196,2],
+    [131,2],[165,2],
+    [131,2],[131,2],
+  ];
+
+  function glockNote(freq, startT, dur) {
+    if (freq === 0) return; // silêncio
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    // Dois parciais para timbre de glockenspiel
+    const osc2  = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+
+    osc.connect(gain);   gain.connect(bgGain);
+    osc2.connect(gain2); gain2.connect(bgGain);
+
+    osc.type  = 'sine';
+    osc2.type = 'sine';
+    osc.frequency.value  = freq;
+    osc2.frequency.value = freq * 2.756; // parcial inarmônico típico de glock
+
+    const d = dur * beat;
+    // ataque instantâneo, decaimento natural longo
+    gain.gain.setValueAtTime(0, startT);
+    gain.gain.linearRampToValueAtTime(0.9, startT + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.001, startT + Math.min(d * 1.8, 1.6));
+
+    gain2.gain.setValueAtTime(0, startT);
+    gain2.gain.linearRampToValueAtTime(0.35, startT + 0.008);
+    gain2.gain.exponentialRampToValueAtTime(0.001, startT + Math.min(d * 0.8, 0.6));
+
+    osc.start(startT);  osc.stop(startT + Math.min(d * 1.8, 1.6) + 0.05);
+    osc2.start(startT); osc2.stop(startT + Math.min(d * 0.8, 0.6) + 0.05);
+    bgNodes.push(osc, osc2);
+  }
+
+  function scheduleMelody(startTime) {
+    let t = startTime;
+    melody.forEach(([freq, dur]) => {
+      glockNote(freq, t, dur);
+      t += dur * beat;
+    });
+    return t;
+  }
+
+  function scheduleBass(startTime) {
+    let t = startTime;
+    bass.forEach(([freq, dur]) => {
+      if (freq > 0) {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(bgGain);
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        const d = dur * beat;
+        gain.gain.setValueAtTime(0.4, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + d * 0.85);
+        osc.start(t); osc.stop(t + d);
+        bgNodes.push(osc);
+      }
+      t += dur * beat;
+    });
+  }
+
+  // Triângulo percussivo bem suave a cada 2 tempos
+  function scheduleTriangle(startTime, totalBeats) {
+    for (let i = 0; i < totalBeats; i += 2) {
+      const t = startTime + i * beat;
+      const buf  = ctx.createBuffer(1, ctx.sampleRate * 0.04, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let j = 0; j < data.length; j++) data[j] = Math.random() * 2 - 1;
+      const src  = ctx.createBufferSource();
+      const filt = ctx.createBiquadFilter();
+      const g    = ctx.createGain();
+      src.buffer = buf;
+      filt.type  = 'bandpass'; filt.frequency.value = 4000; filt.Q.value = 8;
+      src.connect(filt); filt.connect(g); g.connect(bgGain);
+      g.gain.setValueAtTime(0.15, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+      src.start(t); src.stop(t + 0.05);
+      bgNodes.push(src);
+    }
+  }
+
+  const melodyDur = melody.reduce((s, [, d]) => s + d * beat, 0);
+
+  function scheduleLoop(startTime) {
+    if (!bgStarted) return;
+    scheduleMelody(startTime);
+    scheduleBass(startTime);
+    scheduleTriangle(startTime, Math.round(melodyDur / beat));
+    setTimeout(() => {
+      if (bgStarted) scheduleLoop(ctx.currentTime + 0.1);
+    }, (melodyDur - 0.4) * 1000);
+  }
+
+  scheduleLoop(ctx.currentTime + 0.05);
+}
 
 </script>
 </body>
