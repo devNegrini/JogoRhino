@@ -180,7 +180,7 @@ function renderRanking(){
 // SHARE
 let lastScore=0,currentPlayer='Jogador';
 function openShare(score,name){
-  const text=encodeURIComponent('Fiz '+score+' pontos no Flappy Rhino! 🦏⚡ Consegue superar? #FlappyRhino');
+  const text=encodeURIComponent('Fiz '+score+' pontos no Flappy Rhino! 🦏⚡ Consegue superar? https://jogorhino.vercel.app/');
   document.getElementById('shareScoreText').textContent=name+': '+score+' pts 🎉';
   document.getElementById('btnWpp').onclick=()=>window.open('https://wa.me/?text='+text,'_blank');
   document.getElementById('btnIg').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(text));alert('Texto copiado! Cole na legenda do Instagram 📸');};
