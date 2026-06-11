@@ -1259,7 +1259,7 @@
         currentPlayer = "Jogador";
       function openShare(score, name) {
         const text = encodeURIComponent(
-          "Fiz " + score + " pontos no Flappy Rhino! Clique para jogar: https://jogorhino.vercel.app/ 🦏⚡ #FlappyRhino",
+          "Fiz " + score + " pontos no Flappy Rhino! Jogue FlappyRhino https://jogorhino.vercel.app/ 🦏⚡ #FlappyRhino",
         );
         document.getElementById("shareScoreText").textContent =
           name + ": " + score + " pts 🎉";
@@ -2126,29 +2126,6 @@
       // ══════════════════════════════════════════════
       // GAME ENGINE
       // ══════════════════════════════════════════════
-      // Exemplo de como aplicar dentro da lógica que computa os pontos:
-function checkScore(pipe) {
-  if (!pipe.passed && pipe.x + PIPE_W < bird.x) {
-    pipe.passed = true;
-    score++;
-    
-    // --- SISTEMA DE DIFICULDADE PROGRESSIVA ---
-    // A cada 5 pontos, o jogo acelera e o vão diminui!
-    if (score % 5 === 0) {
-      if (speed < 6) speed += 0.3; // Aumenta a velocidade (teto máximo de 6)
-      if (GAP > 95) GAP -= 5;      // Diminui o vão (chão mínimo de 95 pixels)
-    }
-    
-    // Atualiza o texto do placar...
-    document.getElementById("scoreDisplay").textContent = score;
-  }
-}
-function reset() {
-  score = 0;
-  speed = 3;   // Volta para a velocidade inicial
-  GAP = 160;  
- } // Volta para o vão inicial
-  // ...restante do seu reset...
       const canvas = document.getElementById("gameCanvas");
       const ctx = canvas.getContext("2d");
       const scoreEl = document.getElementById("scoreDisplay");
@@ -2156,12 +2133,12 @@ function reset() {
       const W = canvas.width,
         H = canvas.height,
         GROUND = H - 55;
-      const GRAVITY = 0.30,
+      const GRAVITY = 0.36,
         JUMP = -7.2,
         PIPE_W = 54;
-      let GAP = 160,
-        PIPE_SPEED = 2.2,
-        PIPE_INTERVAL = 2000;
+      let GAP = 200,
+        PIPE_SPEED = 1.8,
+        PIPE_INTERVAL = 2400;
       const COIN_R = 10;
       let state = "idle",
         bird,
@@ -2177,6 +2154,7 @@ function reset() {
       let easterEggActive = false,
         easterEggShown = false,
         easterEggBanner = false;
+      let levelUpBanner = false, levelUpText = '', levelUpTimer = null;
 
       function initBird() {
         return { x: 88, y: H / 2 - 20, vy: 0, w: 62, h: 52 };
@@ -2195,7 +2173,11 @@ function reset() {
         easterEggActive = false;
         easterEggShown = false;
         easterEggBanner = false;
-        savedThisRound = false; // reset per-round save flag
+        savedThisRound = false;
+        levelUpBanner = false;
+        levelUpText = '';
+        lastLevel = 0;
+        if(levelUpTimer){clearTimeout(levelUpTimer);levelUpTimer=null;} // reset per-round save flag
         const b = document.getElementById("levelBadge");
         if (b) b.style.display = "none";
         if (btnSaveName) {
@@ -2204,19 +2186,39 @@ function reset() {
         }
       }
 
+      let lastLevel = 0; // track previous level to detect level-up
+
       function updateDifficulty() {
         const lv = Math.floor(score / 10);
-        PIPE_SPEED = Math.min(2.2 + lv * 0.25, 4.8);
-        GAP = Math.max(168 - lv * 8, 110);
-        PIPE_INTERVAL = Math.max(2000 - lv * 90, 1100);
+
+        // Smooth, gradual progression — easier base, smaller increments
+        // Speed: starts at 1.8, +0.15 per level, max 3.8
+        PIPE_SPEED = Math.min(1.8 + lv * 0.15, 3.8);
+        // Gap: starts at 200, -6 per level, min 130 (never too tight)
+        GAP = Math.max(200 - lv * 6, 130);
+        // Pipe interval: starts at 2400ms, -70ms per level, min 1400ms
+        PIPE_INTERVAL = Math.max(2400 - lv * 70, 1400);
+
         const badge = document.getElementById("levelBadge");
         if (lv > 0) {
           badge.style.display = "inline-block";
           badge.textContent = "LV" + (lv + 1);
           badge.style.background =
-            lv >= 3 ? "#E8579A" : lv >= 2 ? "#FF6B1A" : "var(--orange)";
+            lv >= 5 ? "#E8579A" : lv >= 3 ? "#FF6B1A" : "var(--orange)";
         } else {
           badge.style.display = "none";
+        }
+
+        // Show level-up banner when level changes
+        if (lv > lastLevel) {
+          lastLevel = lv;
+          levelUpText = "🎉 NÍVEL " + (lv + 1) + "!";
+          levelUpBanner = true;
+          if (levelUpTimer) clearTimeout(levelUpTimer);
+          levelUpTimer = setTimeout(() => {
+            levelUpBanner = false;
+            levelUpTimer = null;
+          }, 2200);
         }
       }
 
@@ -2709,7 +2711,7 @@ function reset() {
         if (state === "playing") {
           bird.vy += GRAVITY;
           bird.y += bird.vy;
-          const minSpacing = 210;
+          const minSpacing = 280;
           const lastPipeX =
             pipes.length > 0 ? pipes[pipes.length - 1].x : -9999;
           if (lastPipeX <= W - minSpacing) spawnPipe();
