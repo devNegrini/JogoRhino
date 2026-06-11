@@ -2146,7 +2146,7 @@ function checkScore(pipe) {
 function reset() {
   score = 0;
   speed = 3;   // Volta para a velocidade inicial
-  GAP = 140;  
+  GAP = 160;  
  } // Volta para o vão inicial
   // ...restante do seu reset...
       const canvas = document.getElementById("gameCanvas");
@@ -2156,10 +2156,10 @@ function reset() {
       const W = canvas.width,
         H = canvas.height,
         GROUND = H - 55;
-      const GRAVITY = 0.36,
+      const GRAVITY = 0.30,
         JUMP = -7.2,
         PIPE_W = 54;
-      let GAP = 120,
+      let GAP = 160,
         PIPE_SPEED = 2.2,
         PIPE_INTERVAL = 2000;
       const COIN_R = 10;
